@@ -1,0 +1,129 @@
+---
+title: "Coursera Practical Machine Learning Project"
+author: "adanlp"
+date: "May 15, 2018"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Predicting "How (well)" of Weight Lifting Exercises 
+
+## Summary
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. Using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, we defined a Machine Learning model that allowed us to predict if the exercise was performed correctly or not.
+
+## Analysis
+Our dataset contains observations of exercises performed by 6 male participants. Whether the exercise was performed correctly or not is identified by the classe variable; Class A corresponds to the specified execution of the exercise, while the other 4 classes (B to E) correspond to common mistakes.
+
+The dataset and further information is available  [here](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har).
+
+### Getting and Cleaning the data
+R libraries used:
+```{r warning=FALSE, message = FALSE}
+library(caret)
+library(rpart)
+library(randomForest)
+```
+
+The data is available in two sets, the first one is for training, with 19,622 observations, and the second one is for testing, with 20 cases where we're going to apply our Machine Learning model to predict the classe value.
+
+* Training: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+* Testing: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+```{r}
+url1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url1, destfile="pml_training.csv")
+download.file(url2, destfile="pml_testing.csv")
+training <- read.csv("pml_training.csv")
+testing <- read.csv("pml_testing.csv")
+```
+
+To clean the data, the following criteria was considered:
+
+1. Remove near zero variance columns
+```{r}
+nzv <- nearZeroVar(training)
+training <- training[, -nzv]
+testing <- testing[, -nzv]
+```
+
+2. Remove columns with most records equal to NAs
+```{r}
+training <- training[, colSums(is.na(training))==0]
+testing <- testing[, colSums(is.na(testing))==0]
+```
+
+3. Remove columns with observations not relevant to the Machine Learning models, such as number of observation, name of the subject, etc. This happens to be the first 6 columns of the datasets.
+```{r}
+training <- training[, -(1:6)]
+testing <- testing[, -(1:6)]
+```
+
+The result is new training and testing sets of **53 columns** each. 
+
+### Machine Learning Models
+In order to test our model, and previous to make any predictions, the training set was subsecuently divided in two parts: **subTrain (80%) and subTest (20%)**. A seed was set for reproducibility.
+```{r}
+inTrain <- createDataPartition(training$classe, p=0.8, list=FALSE)
+subTrain <- training[inTrain,]
+subTest <- training[-inTrain,]
+
+set.seed(9999)
+```
+
+#### 1. Decision Tree
+```{r}
+fitDT <- rpart(classe~., data=subTrain, method="class")
+predDT <- predict(fitDT, newdata=subTest, type="class")
+cmDT <- confusionMatrix(predDT, subTest$classe)
+cmDT
+```
+
+#### 2. Random Forest
+```{r}
+fitRF <- randomForest(classe~., data=subTrain)
+predRF <- predict(fitRF, subTest, type="class")
+cmrf <- confusionMatrix(predRF, subTest$classe)
+cmrf
+plot(fitRF)
+```
+
+#### 3. Generalized Boosted Regression (GBM)
+```{r}
+fitGBMc <- trainControl(method="repeatedcv", number=5, repeats=1)
+fitGBM1 <- train(classe~., data=subTrain, method="gbm", trControl=fitGBMc, verbose=FALSE)
+predGBM <- predict(fitGBM1, subTest)
+cmgbm <- confusionMatrix(predGBM, subTest$classe)
+cmgbm
+plot(fitGBM1)
+```
+
+Finally, the ```system.time``` function was used to compute the time consumed by every training function (A computer with one Intel(R) Core i5-5200U CPU and 8 GB of RAM was used). The following table shows the results for the three Machine Learning models: 
+
+Method | System Time (user/system/elapsed)
+---------- |----------
+Decision Tree | 2.36/0.00/2.36
+Random Forest | 52.08/0.27/52.50
+GBM | 417.77/1.86/436.30
+
+As we can see on the table, the Decision Tree is the fastest of the models, resulting, not surprisingly, in the lower accuracy. On the other hand, Random Forest and GBM resulted in a much better accuracy; still, the difference in system time between them is of consideration, with Random Forest providing a sligthly better accuracy in just 1/8 of the training time compared to GBM.
+
+### Prediction of the testing dataset
+With **Random Forest** selected as our model, due to its accuracy and system time, we predicted the *classe* values of the testing set as follows:
+```{r}
+fitRF <- randomForest(classe~., data=subTrain)
+predRF <- predict(fitRF, subTest, type="class")
+predFinal <- predict(fitRF, testing, type="class")
+predFinal
+```
+
+## Conclusion
+The adequate selection of a Machine Learning model allow us to get a higly effective output for the prediction we're trying to achive, not only in terms of accuracy but also in terms of compute resources and time of execution, wich can become very important as both our data size and training requirements increases. 
+
+## References
+* Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
